@@ -1,74 +1,75 @@
 # ObsidianLLM
 
-A local knowledge base that clips web articles, processes them with an LLM, and organizes the results as a browsable wiki — all running on your machine.
+**作者 / Author:** Beamus Wayne
 
-![ClipView](https://github.com/BeamusWayne/ObsidianLLM/raw/main/docs/clip.png)
+[English](README.en.md) | 中文
 
-## What it does
+一个本地知识库工具——剪藏网页文章，用 LLM 处理后整理成可浏览的 Wiki，全程运行在你自己的机器上。
 
-1. **Clip** — paste a URL, the server fetches and strips it to clean Markdown
-2. **Ingest** — an LLM reads the article and writes structured wiki pages to `wiki/`
-3. **Browse** — explore the wiki and the entity graph in the browser
+## 功能
 
-## Features
+- **剪藏** — 粘贴 URL，自动抓取并提取干净的 Markdown
+- **入库** — LLM 读取文章，将结构化 Wiki 页面写入 `wiki/`
+- **浏览** — 在浏览器中查阅 Wiki 条目和实体关系图
 
-- Multi-backend LLM chain — Ollama (local), Claude API, or any OpenAI-compatible endpoint
-- Fallback chain with named presets: `["preset:qwen-plus", "preset:glm-5", "ollama"]`
-- Parallel ingest workers with per-file size routing
-- Manual ingest: single-file hover button, batch select, or "process all pending"
-- Auto-ingest toggle per session
-- Image vision: articles with embedded images get described by a vision model
-- Wiki graph view — entities and relationships rendered as a force-directed graph
-- Dark / light / system theme
+### 特性
 
-## Stack
+- 多后端 LLM 链 — Ollama（本地）、Claude API、任意 OpenAI 兼容接口
+- 命名预设支持：`["preset:qwen-plus", "preset:glm-5", "ollama"]`，余额不足时自动切换
+- 并行 Ingest 工作线程，按文件大小路由到不同模型
+- 手动处理入口：单文件悬浮按钮、批量勾选、一键处理全部待处理文件
+- 图片视觉理解：含图文章由视觉模型自动描述图片内容
+- Wiki 图谱视图 — 实体与关系以力导向图呈现
+- 深色 / 浅色 / 跟随系统 三种主题
 
-| Layer | Tech |
-|-------|------|
-| Backend | Python · FastAPI · Uvicorn |
-| Scraping | Trafilatura |
-| Frontend | Vue 3 · Vite |
-| LLM | Ollama / Anthropic Claude / OpenAI-compatible |
+## 技术栈
 
-## Quick start
+| 层 | 技术 |
+|----|------|
+| 后端 | Python · FastAPI · Uvicorn |
+| 抓取 | Trafilatura |
+| 前端 | Vue 3 · Vite |
+| LLM | Ollama / Anthropic Claude / OpenAI 兼容接口 |
 
-### Prerequisites
+## 快速开始
+
+### 前置条件
 
 - Python 3.11+
 - Node.js 18+
-- At least one LLM backend:
-  - [Ollama](https://ollama.com) running locally (`ollama serve`), **or**
-  - A Claude API key, **or**
-  - Any OpenAI-compatible endpoint (DashScope, OpenRouter, etc.)
+- 至少一个 LLM 后端：
+  - 本地运行 [Ollama](https://ollama.com)（`ollama serve`），**或**
+  - Claude API Key，**或**
+  - 任意 OpenAI 兼容接口（DashScope、OpenRouter 等）
 
-### Install
+### 安装
 
 ```bash
 git clone https://github.com/BeamusWayne/ObsidianLLM.git
 cd ObsidianLLM
 
-# Python deps
+# Python 依赖
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Config
+# 配置
 cp settings.json.example settings.json
-# Edit settings.json — set your backend and API keys
+# 编辑 settings.json，填写后端和 API Key
 ```
 
-### Run
+### 启动
 
 ```bash
 bash start.sh
-# Open http://localhost:8000
+# 打开 http://localhost:8000
 ```
 
-`start.sh` builds the frontend, then starts the server. Subsequent runs skip the npm install if nothing changed.
+`start.sh` 先构建前端，再启动服务器。后续运行若前端无变化会跳过 npm install。
 
-## Configuration
+## 配置说明
 
-Copy `settings.json.example` to `settings.json` and edit:
+将 `settings.json.example` 复制为 `settings.json` 并按需修改：
 
 ```json
 {
@@ -106,37 +107,36 @@ Copy `settings.json.example` to `settings.json` and edit:
 }
 ```
 
-### Fallback chain
+### 推理顺序（Fallback Chain）
 
-The system tries backends in order. If one returns a billing/quota error it automatically moves to the next. You can reference named presets directly in the chain:
+系统按顺序尝试各后端，遇到余额不足或配额错误时自动切换到下一个。可以在链中直接引用命名预设：
 
 ```json
 "fallback_chain": ["preset:qwen-plus", "preset:glm-5", "ollama"]
 ```
 
-Presets are defined in `custom_presets` and each acts as an independent OpenAI-compatible endpoint.
+预设在 `custom_presets` 中定义，每个预设都是独立的 OpenAI 兼容接口配置。
 
-## Project layout
+## 项目结构
 
 ```
 ObsidianLLM/
-├── server.py           # FastAPI app + routes
-├── start.sh            # Build frontend + start server
+├── server.py           # FastAPI 应用及路由
+├── start.sh            # 构建前端并启动服务
 ├── scripts/
-│   ├── clip.py         # URL fetch + Markdown extraction
-│   ├── ingest.py       # LLM processing + wiki writer
-│   ├── llm.py          # Multi-backend LLM wrapper
-│   └── query.py        # Wiki query
+│   ├── clip.py         # URL 抓取与 Markdown 提取
+│   ├── ingest.py       # LLM 处理与 Wiki 写入
+│   ├── llm.py          # 多后端 LLM 封装
+│   └── query.py        # Wiki 查询
 ├── frontend/
-│   └── src/
-│       └── views/
-│           ├── ClipperView.vue   # Clip & Ingest panel
-│           ├── WikiView.vue      # Wiki browser
-│           ├── GraphView.vue     # Entity graph
-│           └── SettingsView.vue  # Backend config
-├── raw/                # Clipped articles + images (gitignored)
-├── wiki/               # Generated wiki pages (gitignored)
-└── settings.json       # Your config (gitignored)
+│   └── src/views/
+│       ├── ClipperView.vue   # 剪藏与入库面板
+│       ├── WikiView.vue      # Wiki 浏览
+│       ├── GraphView.vue     # 实体图谱
+│       └── SettingsView.vue  # 后端配置
+├── raw/                # 剪藏的文章和图片（已 gitignore）
+├── wiki/               # 生成的 Wiki 页面（已 gitignore）
+└── settings.json       # 你的配置文件（已 gitignore）
 ```
 
 ## License
