@@ -1,0 +1,27 @@
+{
+  "mode": "ollama",
+  "auto_ingest": true,
+  "fallback_chain": ["ollama"],
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "text_model": "qwen3.5:9b",
+    "vision_model": "qwen3-vl:8b"
+  },
+  "claude": {
+    "api_key": "sk-ant-...",
+    "text_model": "claude-sonnet-4-6"
+  },
+  "custom": {
+    "base_url": "https://api.example.com/v1",
+    "api_key": "sk-...",
+    "text_model": "your-model-name"
+  },
+  "custom_presets": [],
+  "parallel": {
+    "enabled": false,
+    "workers": 3,
+    "size_threshold_chars": 3000,
+    "small_backend": "ollama",
+    "large_backend": "ollama"
+  }
+}

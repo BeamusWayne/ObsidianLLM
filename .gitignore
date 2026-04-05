@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.gstack/
+
+# Runtime state
+.ingest_status.json
+.processed.json
+.DS_Store
+
+# Sensitive config (contains API keys)
+settings.json
+
+# User data
+raw/
+wiki/
+.obsidian/
+
+# Frontend deps & build
+frontend/node_modules/
+frontend/dist/
