@@ -2,11 +2,14 @@
 
 Execution follows `fallback_chain` in settings.json.
 On billing/quota errors the next backend in the chain is tried automatically.
+If the chain is exhausted due to billing errors and Ollama is not in the chain,
+a BillingExhaustedException is raised so the caller can ask the user first.
 """
 import base64
 import json
 import ssl
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -41,6 +44,17 @@ DEFAULT_SETTINGS = {
 }
 
 
+class BillingExhaustedException(RuntimeError):
+    """Raised when all backends in fallback_chain have run out of credit/quota
+    and Ollama is not in the user's configured chain.
+
+    Callers should present a confirmation dialog before retrying with Ollama.
+    """
+    def __init__(self, message: str, last_backend: str):
+        super().__init__(message)
+        self.last_backend = last_backend
+
+
 def load_settings() -> dict:
     if SETTINGS_FILE.exists():
         return json.loads(SETTINGS_FILE.read_text())
@@ -52,6 +66,8 @@ _BILLING_PHRASES = (
     "exceeded your current quota",
     "billing_hard_limit_reached",
     "insufficient_quota",
+    "余额不足",
+    "account balance",
 )
 
 def _is_billing_error(msg: str) -> bool:
@@ -206,21 +222,47 @@ def _describe_single(s: dict, backend: str, image_b64: str) -> str:
 def _build_chain(s: dict, preferred_backend: str | None) -> list[str]:
     """
     Build the ordered list of backends to try.
-    If a backend is explicitly requested (parallel routing), put it first,
-    followed by the rest of the configured chain (deduped).
+
+    The fallback_chain in settings is the authoritative list.
+    If a preferred_backend is given (e.g. from parallel routing), it is
+    moved to the front ONLY if it is already present in the chain.
+    Backends not in the user's chain are never silently added.
     """
-    chain = s.get("fallback_chain") or [s.get("mode", "ollama")]
-    if preferred_backend and preferred_backend not in chain:
-        chain = [preferred_backend] + chain
-    elif preferred_backend and chain[0] != preferred_backend:
-        # Requested backend exists in chain but not first — move it to front
+    chain = list(s.get("fallback_chain") or [s.get("mode", "ollama")])
+    if not preferred_backend or preferred_backend not in chain:
+        return chain
+    if chain[0] != preferred_backend:
         chain = [preferred_backend] + [b for b in chain if b != preferred_backend]
     return chain
 
 
-def chat(messages: list[dict], backend: str | None = None, warn_cb=None) -> str:
+def chat(
+    messages: list[dict],
+    backend: str | None = None,
+    warn_cb=None,
+    allow_ollama_fallback: bool = False,
+) -> str:
+    """Run chat inference following fallback_chain.
+
+    Parameters
+    ----------
+    messages:
+        Conversation messages.
+    backend:
+        Optional preferred backend (parallel routing hint). Only used if it is
+        already present in the user's fallback_chain.
+    warn_cb:
+        Optional callback(msg: str) for billing-fallback log lines.
+    allow_ollama_fallback:
+        If True, Ollama is appended as last-resort even when not in chain.
+        Only set this after the user has explicitly consented.
+    """
     s = load_settings()
     chain = _build_chain(s, backend)
+
+    # User explicitly consented to Ollama as emergency fallback
+    if allow_ollama_fallback and "ollama" not in chain:
+        chain = chain + ["ollama"]
 
     last_error: RuntimeError | None = None
     for i, b in enumerate(chain):
@@ -241,13 +283,29 @@ def chat(messages: list[dict], backend: str | None = None, warn_cb=None) -> str:
                 continue
             raise  # non-billing errors propagate immediately
 
+    # All chain entries exhausted due to billing — raise a typed exception so
+    # callers can ask the user whether to fall back to local Ollama.
+    if last_error is not None and "ollama" not in chain:
+        raise BillingExhaustedException(
+            "所有 API 后端余额均已耗尽，请确认是否启用本地 Ollama 继续处理",
+            last_backend=chain[-1] if chain else "unknown",
+        )
+
     raise last_error or RuntimeError("fallback_chain 中所有后端均失败")
 
 
-def describe_image(source: "Path | str", backend: str | None = None, warn_cb=None) -> str:
+def describe_image(
+    source: "Path | str",
+    backend: str | None = None,
+    warn_cb=None,
+    allow_ollama_fallback: bool = False,
+) -> str:
     """Describe an image via vision model. source is a local Path or remote URL."""
     s = load_settings()
     chain = _build_chain(s, backend)
+
+    if allow_ollama_fallback and "ollama" not in chain:
+        chain = chain + ["ollama"]
 
     image_bytes = _fetch_bytes(source) if isinstance(source, str) else Path(source).read_bytes()
     image_b64   = base64.b64encode(image_bytes).decode()
@@ -271,7 +329,42 @@ def describe_image(source: "Path | str", backend: str | None = None, warn_cb=Non
                 continue
             raise
 
+    if last_error is not None and "ollama" not in chain:
+        raise BillingExhaustedException(
+            "所有 API 后端余额均已耗尽（视觉任务），请确认是否启用本地 Ollama 继续处理",
+            last_backend=chain[-1] if chain else "unknown",
+        )
+
     raise last_error or RuntimeError("describe_image: 所有后端均失败")
+
+
+def test_connection(backend: str) -> dict:
+    """Test connectivity to a backend with a minimal request.
+
+    Returns::
+
+        {"ok": True,  "latency_ms": 342}
+        {"ok": False, "error": "Connection refused"}
+    """
+    s = load_settings()
+    start = time.monotonic()
+    probe = [{"role": "user", "content": "hi"}]
+    try:
+        if backend == "ollama":
+            cfg = s.get("ollama", {})
+            base = cfg.get("base_url", "http://localhost:11434")
+            # Use /api/tags for a lightweight reachability check
+            req = urllib.request.Request(f"{base}/api/tags")
+            with urllib.request.urlopen(req, timeout=5, context=_SSL_CTX):
+                pass
+        elif backend == "claude":
+            _chat_single(s, "claude", probe)
+        else:
+            _chat_single(s, backend, probe)
+        latency = int((time.monotonic() - start) * 1000)
+        return {"ok": True, "latency_ms": latency}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def _fetch_bytes(url: str, timeout: int = 30) -> bytes:

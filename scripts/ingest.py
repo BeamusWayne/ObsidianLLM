@@ -17,7 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Callable
 
-from llm import IMAGE_SUFFIXES, chat, describe_image, load_settings, schema_text
+from llm import IMAGE_SUFFIXES, BillingExhaustedException, chat, describe_image, load_settings, schema_text
 
 _LOCK = threading.Lock()
 
@@ -188,6 +188,7 @@ def ingest_article(
     raw_index: dict[str, Path],
     progress_cb: Callable | None = None,
     wiki_context: str | None = None,
+    allow_ollama_fallback: bool = False,
 ) -> None:
     log = progress_cb or print
     rel = str(path.relative_to(ROOT))
@@ -223,7 +224,7 @@ def ingest_article(
     ]
 
     log("  calling LLM...")
-    response = chat(messages, backend=backend, warn_cb=log)
+    response = chat(messages, backend=backend, warn_cb=log, allow_ollama_fallback=allow_ollama_fallback)
     pages = parse_llm_response(response)
 
     if not pages:
@@ -243,6 +244,7 @@ def ingest_standalone_image(
     path: Path,
     progress_cb: Callable | None = None,
     wiki_context: str | None = None,
+    allow_ollama_fallback: bool = False,
 ) -> None:
     log = progress_cb or print
     rel = str(path.relative_to(ROOT))
@@ -264,7 +266,7 @@ def ingest_standalone_image(
     ]
 
     log("  calling LLM...")
-    response = chat(messages, backend=backend, warn_cb=log)
+    response = chat(messages, backend=backend, warn_cb=log, allow_ollama_fallback=allow_ollama_fallback)
     pages = parse_llm_response(response)
 
     if not pages:
@@ -379,7 +381,12 @@ class IngestWorker(threading.Thread):
             "last_error": None,
             "billing_fallback": False,
             "billing_fallback_msg": "",
+            "billing_needs_confirm": False,
+            "billing_confirm_msg": "",
         }
+        # Event used to pause/resume the worker while awaiting user confirmation
+        self._confirm_event = threading.Event()
+        self._confirm_result: bool | None = None  # True=use Ollama, False=skip
         self._restore_status()
 
     # ── Public API ─────────────────────────────────────────────────────────────
@@ -401,6 +408,24 @@ class IngestWorker(threading.Thread):
         with self._lock:
             self._status["billing_fallback"] = False
             self._status["billing_fallback_msg"] = ""
+        self._persist()
+
+    def confirm_ollama(self) -> None:
+        """User agreed to use local Ollama as fallback. Resume worker."""
+        with self._lock:
+            self._status["billing_needs_confirm"] = False
+            self._status["billing_confirm_msg"] = ""
+        self._confirm_result = True
+        self._confirm_event.set()
+        self._persist()
+
+    def reject_ollama(self) -> None:
+        """User declined Ollama fallback. Skip current file and resume queue."""
+        with self._lock:
+            self._status["billing_needs_confirm"] = False
+            self._status["billing_confirm_msg"] = ""
+        self._confirm_result = False
+        self._confirm_event.set()
         self._persist()
 
     def enqueue_unprocessed(self) -> int:
@@ -434,6 +459,7 @@ class IngestWorker(threading.Thread):
             if "余额不足" in msg:
                 self._status["billing_fallback"] = True
                 self._status["billing_fallback_msg"] = msg.strip().lstrip("WARNING:").strip()
+        self._persist()
 
     def _persist(self):
         try:
@@ -454,8 +480,62 @@ class IngestWorker(threading.Thread):
                     self._status["log"] = data.get("log", [])[-20:]
                     self._status["billing_fallback"] = data.get("billing_fallback", False)
                     self._status["billing_fallback_msg"] = data.get("billing_fallback_msg", "")
+                    # Never restore a pending confirmation across restarts — let user re-trigger
+                    self._status["billing_needs_confirm"] = False
+                    self._status["billing_confirm_msg"] = ""
             except Exception:
                 pass
+
+    # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _run_with_confirm(
+        self,
+        path: Path,
+        raw_index: dict[str, Path],
+        wiki_ctx: str,
+        allow_ollama_fallback: bool = False,
+    ) -> bool | None:
+        """Run ingest for one file, handling BillingExhaustedException.
+
+        Returns True on success, None if user rejected Ollama (file skipped).
+        Raises on other errors.
+        """
+        try:
+            if path.suffix in IMAGE_SUFFIXES:
+                ingest_standalone_image(
+                    path,
+                    progress_cb=self._log,
+                    wiki_context=wiki_ctx,
+                    allow_ollama_fallback=allow_ollama_fallback,
+                )
+            else:
+                ingest_article(
+                    path,
+                    raw_index,
+                    progress_cb=self._log,
+                    wiki_context=wiki_ctx,
+                    allow_ollama_fallback=allow_ollama_fallback,
+                )
+            return True
+        except BillingExhaustedException as e:
+            confirm_msg = str(e)
+            self._log(f"  WARNING: {confirm_msg}")
+            with self._lock:
+                self._status["billing_needs_confirm"] = True
+                self._status["billing_confirm_msg"] = confirm_msg
+            self._persist()
+
+            # Block until user responds (confirm_ollama / reject_ollama sets the event)
+            self._confirm_event.clear()
+            self._confirm_result = None
+            self._confirm_event.wait()  # indefinitely — user must respond
+
+            if self._confirm_result:
+                self._log("  用户确认：启用 Ollama，重试处理中…")
+                return self._run_with_confirm(path, raw_index, wiki_ctx, allow_ollama_fallback=True)
+            else:
+                self._log("  用户拒绝启用 Ollama，跳过此文件")
+                return None
 
     # ── Worker loop ────────────────────────────────────────────────────────────
 
@@ -491,19 +571,22 @@ class IngestWorker(threading.Thread):
                     "last_error": None,
                     "billing_fallback": False,
                     "billing_fallback_msg": "",
+                    "billing_needs_confirm": False,
+                    "billing_confirm_msg": "",
                 })
             self._persist()
 
             try:
                 wiki_ctx = get_wiki_context()
-                if path.suffix in IMAGE_SUFFIXES:
-                    ingest_standalone_image(path, progress_cb=self._log, wiki_context=wiki_ctx)
+                allow_ollama = self._run_with_confirm(path, raw_index, wiki_ctx)
+                if allow_ollama is None:
+                    # User rejected Ollama — file skipped, not an error
+                    with self._lock:
+                        self._status["last_error"] = "用户拒绝启用 Ollama，已跳过此文件"
                 else:
-                    ingest_article(path, raw_index, progress_cb=self._log, wiki_context=wiki_ctx)
-
-                with self._lock:
-                    self._status["total_processed"] += 1
-                    self._status["last_error"] = None
+                    with self._lock:
+                        self._status["total_processed"] += 1
+                        self._status["last_error"] = None
 
             except Exception as e:
                 with self._lock:

@@ -3,12 +3,30 @@
     <div class="panel">
       <h2 class="panel-title">Clip & Ingest</h2>
 
-      <!-- Billing fallback banner -->
-      <div v-if="status.billing_fallback" class="billing-banner">
+      <!-- Billing fallback info banner (silent switch already happened) -->
+      <div v-if="status.billing_fallback && !status.billing_needs_confirm" class="billing-banner">
         <span>⚠️</span>
-        <span>{{ status.billing_fallback_msg || 'LLM 余额不足，已自动切换后端继续处理' }}</span>
-        <a href="https://console.anthropic.com" target="_blank" class="billing-link">去充值 →</a>
+        <span>{{ status.billing_fallback_msg || 'LLM 余额不足，已切换到链中下一个后端继续处理' }}</span>
         <button class="banner-close" @click="dismissBilling">✕</button>
+      </div>
+
+      <!-- Billing exhausted — waiting for user confirmation -->
+      <div v-if="status.billing_needs_confirm" class="billing-confirm-modal">
+        <div class="billing-confirm-box">
+          <div class="billing-confirm-icon">⚠️</div>
+          <div class="billing-confirm-title">所有 API 后端余额已耗尽</div>
+          <div class="billing-confirm-msg">{{ status.billing_confirm_msg || '链中所有 API 后端均余额不足，是否启用本地 Ollama 继续处理当前文件？' }}</div>
+          <div class="billing-confirm-note">若选择「否」，当前文件将被跳过，队列中其余文件继续处理。</div>
+          <div class="billing-confirm-actions">
+            <button class="btn-confirm-yes" :disabled="confirmPending" @click="confirmOllama">
+              <span v-if="confirmPending" class="btn-spinner"></span>
+              {{ confirmPending ? '处理中…' : '是，启用本地 Ollama' }}
+            </button>
+            <button class="btn-confirm-no" :disabled="confirmPending" @click="rejectOllama">
+              否，跳过此文件
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Clip URL -->
@@ -951,8 +969,11 @@ async function doClip() {
 const status = ref({
   running: false, current_file: null, queued: 0,
   log: [], started_at: null, finished_at: null,
-  total_processed: 0, last_error: null, billing_fallback: false, billing_fallback_msg: '',
+  total_processed: 0, last_error: null,
+  billing_fallback: false, billing_fallback_msg: '',
+  billing_needs_confirm: false, billing_confirm_msg: '',
 })
+const confirmPending = ref(false)
 const logBox  = ref(null)
 const rawFiles = ref([])
 const now      = ref(Date.now())
@@ -1016,6 +1037,20 @@ async function dismissBilling() {
   status.value = { ...status.value, billing_fallback: false, billing_fallback_msg: '' }
 }
 
+async function confirmOllama() {
+  confirmPending.value = true
+  await fetch('/api/ingest/confirm-ollama', { method: 'POST' }).catch(() => {})
+  status.value = { ...status.value, billing_needs_confirm: false, billing_confirm_msg: '' }
+  confirmPending.value = false
+}
+
+async function rejectOllama() {
+  confirmPending.value = true
+  await fetch('/api/ingest/reject-ollama', { method: 'POST' }).catch(() => {})
+  status.value = { ...status.value, billing_needs_confirm: false, billing_confirm_msg: '' }
+  confirmPending.value = false
+}
+
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
 onMounted(async () => {
   const data = await fetch('/api/settings').then(r => r.json()).catch(() => null)
@@ -1069,9 +1104,43 @@ onUnmounted(() => {
   font-size: 13px; animation: fade-in 0.3s ease;
 }
 .billing-banner span:nth-child(2) { flex: 1; }
-.billing-link { color: var(--accent); font-size: 12px; white-space: nowrap; }
-.billing-link:hover { text-decoration: underline; }
 .banner-close { background: none; border: none; cursor: pointer; color: var(--muted); }
+
+/* ── Billing confirm modal ───────────────────────────────────────────────────── */
+.billing-confirm-modal {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  animation: fade-in 0.2s ease;
+}
+.billing-confirm-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 28px 28px 22px;
+  max-width: 400px; width: 90%; display: flex; flex-direction: column; gap: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.billing-confirm-icon  { font-size: 28px; text-align: center; }
+.billing-confirm-title { font-size: 15px; font-weight: 700; text-align: center; }
+.billing-confirm-msg   { font-size: 13px; color: var(--text); line-height: 1.5; }
+.billing-confirm-note  { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.billing-confirm-actions {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 4px;
+}
+.btn-confirm-yes {
+  padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  transition: opacity 0.15s;
+}
+.btn-confirm-yes:hover:not(:disabled) { opacity: 0.88; }
+.btn-confirm-yes:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-confirm-no {
+  padding: 10px; border-radius: 8px; font-size: 13px;
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); cursor: pointer; transition: background 0.15s;
+}
+.btn-confirm-no:hover:not(:disabled) { background: var(--active-bg); }
+.btn-confirm-no:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Card ────────────────────────────────────────────────────────────────────── */
 .card {

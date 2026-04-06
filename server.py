@@ -274,6 +274,33 @@ async def dismiss_billing():
     return {"ok": True}
 
 
+@app.post("/api/ingest/confirm-ollama")
+async def confirm_ollama():
+    """User agreed to use local Ollama as emergency fallback. Resume worker."""
+    worker.confirm_ollama()
+    return {"ok": True}
+
+
+@app.post("/api/ingest/reject-ollama")
+async def reject_ollama():
+    """User declined Ollama fallback. Skip current file and resume queue."""
+    worker.reject_ollama()
+    return {"ok": True}
+
+
+class TestProviderRequest(BaseModel):
+    backend: str  # "ollama", "claude", "custom", "preset:<name>"
+
+@app.post("/api/test-provider")
+async def test_provider(req: TestProviderRequest):
+    """Test connectivity to a backend. Returns latency on success or error message."""
+    def run_sync():
+        from llm import test_connection
+        return test_connection(req.backend)
+    result = await asyncio.to_thread(run_sync)
+    return result
+
+
 # ── Query ─────────────────────────────────────────────────────────────────────
 
 @app.post("/api/query")

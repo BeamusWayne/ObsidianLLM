@@ -99,7 +99,7 @@
       <!-- Fallback chain -->
       <section class="card">
         <div class="card-title">推理顺序</div>
-        <div class="chain-desc">系统按顺序尝试各后端，遇到余额不足时自动切换到下一个。拖拽可调整顺序。</div>
+        <div class="chain-desc">系统严格按此顺序使用后端。若余额不足且未配置 Ollama，会询问是否启用本地模型。拖拽可调整顺序。</div>
 
         <div class="chain-list">
           <div v-for="(id, i) in form.fallback_chain" :key="id"
@@ -117,6 +117,15 @@
               {{ chainConfigStatus(id) }}
             </span>
             <span v-if="i === 0" class="chain-primary-tag">主要</span>
+            <button class="chain-test-btn"
+              :class="testResultClass(id)"
+              :disabled="testingId === id"
+              @click.stop="testProvider(id)"
+              title="测试连通性">
+              <span v-if="testingId === id" class="test-spinner"></span>
+              <span v-else-if="testResults[id]">{{ testResultLabel(id) }}</span>
+              <span v-else>测试</span>
+            </button>
             <button class="chain-remove" :disabled="form.fallback_chain.length <= 1"
               @click="removeFromChain(i)" title="从链中移除">✕</button>
           </div>
@@ -303,6 +312,40 @@ const modes = [
   { value: 'custom', label: '中转站 / 自定义', desc: 'OpenAI 兼容接口' },
 ]
 
+// ── Provider connectivity test ────────────────────────────────────────────────
+const testingId = ref(null)
+const testResults = ref({})  // id → { ok, latency_ms, error }
+
+async function testProvider(id) {
+  testingId.value = id
+  testResults.value = { ...testResults.value, [id]: null }
+  try {
+    const res = await fetch('/api/test-provider', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backend: id }),
+    }).then(r => r.json())
+    testResults.value = { ...testResults.value, [id]: res }
+  } catch (e) {
+    testResults.value = { ...testResults.value, [id]: { ok: false, error: String(e) } }
+  } finally {
+    testingId.value = null
+  }
+}
+
+function testResultLabel(id) {
+  const r = testResults.value[id]
+  if (!r) return '测试'
+  if (r.ok) return `✓ ${r.latency_ms}ms`
+  return '✗ 失败'
+}
+
+function testResultClass(id) {
+  const r = testResults.value[id]
+  if (!r) return ''
+  return r.ok ? 'test-ok' : 'test-fail'
+}
+
 onMounted(async () => {
   const data = await fetch('/api/settings').then(r => r.json()).catch(() => null)
   if (data) Object.assign(form, data)
@@ -411,6 +454,23 @@ async function save() {
   font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
   background: var(--accent); color: #fff; padding: 1px 5px; border-radius: 3px;
 }
+.chain-test-btn {
+  font-size: 10px; padding: 2px 7px; border-radius: 4px; flex-shrink: 0;
+  border: 1px solid var(--border); background: transparent; cursor: pointer;
+  color: var(--muted); transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap; min-width: 42px; text-align: center;
+}
+.chain-test-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.chain-test-btn.test-ok  { border-color: var(--entity); color: var(--entity); background: color-mix(in srgb, var(--entity) 8%, transparent); }
+.chain-test-btn.test-fail { border-color: var(--topic); color: var(--topic); background: color-mix(in srgb, var(--topic) 8%, transparent); }
+.chain-test-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.test-spinner {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  border: 1.5px solid var(--border); border-top-color: var(--accent);
+  animation: spin 0.6s linear infinite; vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .chain-remove {
   background: none; border: none; cursor: pointer; color: var(--muted);
   font-size: 12px; padding: 2px 4px; border-radius: 4px; opacity: 0;
