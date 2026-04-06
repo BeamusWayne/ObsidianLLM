@@ -22,8 +22,8 @@
   --result-err-text: #b91c1c;
 
   /* graph */
-  --graph-link:   #d1d5db;
-  --graph-label:  #4b5563;
+  --graph-link:   rgba(0,0,0,0.10);
+  --graph-label:  #374151;
   --graph-stroke: #f5f6f8;
 
   /* tag pill backgrounds */
@@ -58,7 +58,7 @@
   --result-err-bg:   #3a1010;
   --result-err-text: #f87171;
 
-  --graph-link:   #333333;
+  --graph-link:   rgba(255,255,255,0.15);
   --graph-label:  #9ca3af;
   --graph-stroke: #0f0f0f;
 
@@ -94,7 +94,7 @@
     --result-err-bg:   #3a1010;
     --result-err-text: #f87171;
 
-    --graph-link:   #333333;
+    --graph-link:   rgba(255,255,255,0.15);
     --graph-label:  #9ca3af;
     --graph-stroke: #0f0f0f;
 
@@ -180,7 +180,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .tag-unknown { background: var(--tag-unknown-bg); color: var(--tag-unknown-fg); }
 
 /* ── Graph SVG theme-aware styles ───────────────────────────────────────── */
-.graph-link  { stroke: var(--graph-link); stroke-width: 1; }
+.graph-link  { stroke: var(--graph-link); }
 .graph-label { fill: var(--graph-label); font-size: 11px; pointer-events: none; font-family: inherit; }
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */

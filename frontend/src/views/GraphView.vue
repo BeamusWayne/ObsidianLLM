@@ -1,89 +1,132 @@
 <template>
   <div class="graph-wrap">
-    <!-- Toolbar -->
-    <div class="toolbar">
-      <input v-model="search" placeholder="搜索节点…" class="search" />
-      <div class="legend">
-        <span class="tag tag-concept">concept</span>
-        <span class="tag tag-entity">entity</span>
-        <span class="tag tag-topic">topic</span>
-      </div>
-      <span class="count">{{ nodes.length }} 页 · {{ links.length }} 链接</span>
-    </div>
-
     <svg ref="svgRef" class="graph-svg" @click.self="selected = null"></svg>
 
-    <!-- Node info panel -->
-    <div v-if="selected" class="info-panel">
-      <div class="info-title">{{ selected.label }}</div>
-      <div class="info-badges">
-        <span :class="`tag tag-${selected.type}`">{{ selected.type }}</span>
-        <span v-if="selected.pinned" class="pin-tag">📌 已固定</span>
+    <!-- Minimal top bar -->
+    <div class="topbar">
+      <div class="legend">
+        <span class="leg-dot" style="background:#4a9eff"></span><span class="leg-label">concept</span>
+        <span class="leg-dot" style="background:#4ade80"></span><span class="leg-label">entity</span>
+        <span class="leg-dot" style="background:#fb923c"></span><span class="leg-label">topic</span>
       </div>
-      <div class="info-stat">{{ selected.linkCount }} 条入链</div>
-      <router-link v-if="!selected.isOrphan"
-        :to="`/wiki/${encodeURIComponent(selected.id)}`" class="btn-primary btn-sm">
-        打开 →
-      </router-link>
-      <button v-if="selected.pinned" class="btn-unpin" @click="unpinNode(selected)">
-        解除固定
-      </button>
+      <span class="node-count">{{ visibleNodeCount }} 页 · {{ visibleLinkCount }} 链接</span>
     </div>
 
-    <!-- Forces control panel -->
-    <div class="forces-panel" :class="{ open: showForces }">
-      <button class="forces-toggle" @click="showForces = !showForces">
-        <span class="forces-icon">⚙</span>
-        <span>图形力学</span>
-        <span class="chevron">{{ showForces ? '▾' : '▸' }}</span>
+    <!-- Node info card -->
+    <Transition name="fade">
+      <div v-if="selected" class="info-card" @click.stop>
+        <button class="info-close" @click="selected = null">✕</button>
+        <div class="info-title">{{ selected.label }}</div>
+        <span :class="`tag tag-${selected.type}`">{{ selected.type }}</span>
+        <div class="info-stat">{{ selected.linkCount }} 条入链</div>
+        <div class="info-actions">
+          <router-link v-if="!selected.isOrphan"
+            :to="`/wiki/${encodeURIComponent(selected.id)}`" class="info-link">
+            打开页面 →
+          </router-link>
+          <button v-if="selected.pinned" class="info-unpin" @click="unpinNode(selected)">
+            解除固定
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Filter panel (Obsidian-style) -->
+    <div class="filter-panel" :class="{ open: panelOpen }">
+      <button class="panel-toggle" @click="panelOpen = !panelOpen">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M1 3h14v1.5L9.5 10v5l-3-1.5V10L1 4.5V3z"/>
+        </svg>
+        <span>Filters</span>
+        <span class="panel-chevron">{{ panelOpen ? '▾' : '▸' }}</span>
       </button>
-      <div class="forces-body" v-show="showForces">
-        <div class="force-row">
-          <label>节点间距</label>
-          <input type="range" v-model.number="forces.linkDistance" min="20" max="300" step="10" @input="applyForces" />
-          <span class="force-val">{{ forces.linkDistance }}</span>
+
+      <div v-show="panelOpen" class="panel-body">
+
+        <!-- ── Filters ── -->
+        <div class="psection">
+          <div class="psection-head" @click="sec.filters = !sec.filters">
+            <span class="pchev">{{ sec.filters ? '▾' : '▸' }}</span>
+            <strong>Filters</strong>
+            <button class="icon-action" @click.stop="resetAll" title="重置">↺</button>
+          </div>
+          <div v-show="sec.filters" class="psection-body">
+            <div class="search-field">
+              <svg class="search-icon" viewBox="0 0 20 20" fill="currentColor" width="13" height="13">
+                <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>
+              </svg>
+              <input v-model="search" placeholder="Search files…" class="search-input" />
+            </div>
+            <div class="toggle-row">
+              <span>Orphans</span>
+              <div class="os-toggle" :class="{ on: display.showOrphans }" @click="toggleOrphans"></div>
+            </div>
+          </div>
         </div>
-        <div class="force-row">
-          <label>斥力强度</label>
-          <input type="range" v-model.number="forces.chargeStrength" min="-400" max="-10" step="10" @input="applyForces" />
-          <span class="force-val">{{ forces.chargeStrength }}</span>
+
+        <!-- ── Display ── -->
+        <div class="psection">
+          <div class="psection-head" @click="sec.display = !sec.display">
+            <span class="pchev">{{ sec.display ? '▾' : '▸' }}</span>
+            <strong>Display</strong>
+          </div>
+          <div v-show="sec.display" class="psection-body">
+            <div class="slider-row">
+              <label>Text fade threshold</label>
+              <input type="range" v-model.number="display.fadeThreshold"
+                min="0" max="12" step="0.5" @input="updateLabelVisibility" />
+            </div>
+            <div class="slider-row">
+              <label>Node size</label>
+              <input type="range" v-model.number="display.nodeScale"
+                min="0.3" max="3" step="0.1" @input="applyNodeScale" />
+            </div>
+            <div class="slider-row">
+              <label>Link thickness</label>
+              <input type="range" v-model.number="display.linkThickness"
+                min="0.2" max="4" step="0.1" @input="applyLinkStyle" />
+            </div>
+            <button class="animate-btn" @click="animate">Animate</button>
+          </div>
         </div>
-        <div class="force-row">
-          <label>连线强度</label>
-          <input type="range" v-model.number="forces.linkStrength" min="0.05" max="2" step="0.05" @input="applyForces" />
-          <span class="force-val">{{ forces.linkStrength.toFixed(2) }}</span>
+
+        <!-- ── Forces ── -->
+        <div class="psection">
+          <div class="psection-head" @click="sec.forces = !sec.forces">
+            <span class="pchev">{{ sec.forces ? '▾' : '▸' }}</span>
+            <strong>Forces</strong>
+          </div>
+          <div v-show="sec.forces" class="psection-body">
+            <div class="slider-row">
+              <label>Center force</label>
+              <input type="range" v-model.number="forces.centerStrength"
+                min="0" max="1" step="0.02" @input="applyForces" />
+            </div>
+            <div class="slider-row">
+              <label>Repel force</label>
+              <input type="range" v-model.number="forces.chargeStrength"
+                min="-400" max="-5" step="5" @input="applyForces" />
+            </div>
+            <div class="slider-row">
+              <label>Link force</label>
+              <input type="range" v-model.number="forces.linkStrength"
+                min="0" max="1" step="0.02" @input="applyForces" />
+            </div>
+            <div class="slider-row">
+              <label>Link distance</label>
+              <input type="range" v-model.number="forces.linkDistance"
+                min="10" max="250" step="5" @input="applyForces" />
+            </div>
+          </div>
         </div>
-        <div class="force-row">
-          <label>中心引力</label>
-          <input type="range" v-model.number="forces.centerStrength" min="0" max="1" step="0.05" @input="applyForces" />
-          <span class="force-val">{{ forces.centerStrength.toFixed(2) }}</span>
-        </div>
-        <div class="force-row">
-          <label>分区引力</label>
-          <input type="range" v-model.number="forces.clusterStrength" min="0" max="0.4" step="0.01" @input="applyForces" />
-          <span class="force-val">{{ forces.clusterStrength.toFixed(2) }}</span>
-        </div>
-        <div class="force-row">
-          <label>Hub 向心</label>
-          <input type="range" v-model.number="forces.radialStrength" min="0" max="0.3" step="0.01" @input="applyForces" />
-          <span class="force-val">{{ forces.radialStrength.toFixed(2) }}</span>
-        </div>
-        <div class="force-row">
-          <label>节点大小</label>
-          <input type="range" v-model.number="forces.nodeScale" min="0.4" max="3" step="0.1" @input="applyNodeScale" />
-          <span class="force-val">{{ forces.nodeScale.toFixed(1) }}×</span>
-        </div>
-        <div class="forces-actions">
-          <button class="reset-btn" @click="resetForces">恢复默认</button>
-          <button class="reset-btn" @click="unpinAll">全部解除固定</button>
-        </div>
+
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import * as d3 from 'd3'
 
@@ -91,391 +134,392 @@ const router   = useRouter()
 const svgRef   = ref(null)
 const search   = ref('')
 const selected = ref(null)
-const nodes    = ref([])
-const links    = ref([])
-const showForces = ref(false)
+const panelOpen = ref(true)
 
-// ── Type cluster anchors (fraction of SVG dimensions) ─────────────────────────
-const TYPE_ANCHORS = {
-  concept: { ax: 0.32, ay: 0.30 },
-  entity:  { ax: 0.68, ay: 0.30 },
-  topic:   { ax: 0.50, ay: 0.72 },
-  unknown: { ax: 0.50, ay: 0.50 },
+// Panel sections open state
+const sec = reactive({ filters: true, display: true, forces: true })
+
+// All node/link data
+const allNodes = ref([])
+const allLinks = ref([])
+
+const visibleNodeCount = computed(() =>
+  allNodes.value.filter(n => display.showOrphans || (n.linkCount || 0) > 0).length
+)
+const visibleLinkCount = computed(() => allLinks.value.length)
+
+// ── Display settings ──────────────────────────────────────────────────────────
+const display = reactive({
+  showOrphans:   true,
+  fadeThreshold: 4,
+  nodeScale:     1,
+  linkThickness: 0.8,
+})
+
+// ── Force settings ────────────────────────────────────────────────────────────
+const forces = reactive({
+  centerStrength: 0.28,
+  chargeStrength: -45,
+  linkStrength:   0.5,
+  linkDistance:   55,
+})
+
+const DEFAULT_DISPLAY = { showOrphans: true, fadeThreshold: 4, nodeScale: 1, linkThickness: 0.8 }
+const DEFAULT_FORCES  = { centerStrength: 0.28, chargeStrength: -45, linkStrength: 0.5, linkDistance: 55 }
+
+function resetAll() {
+  Object.assign(display, DEFAULT_DISPLAY)
+  Object.assign(forces,  DEFAULT_FORCES)
+  applyForces(); applyNodeScale(); applyLinkStyle(); updateLabelVisibility()
+  if (!display.showOrphans) toggleOrphans()
 }
-const ORPHAN_ANCHOR = { ax: 0.88, ay: 0.84 }
 
-const ZONE_META = [
-  { type: 'concept', label: 'Concepts' },
-  { type: 'entity',  label: 'Entities'  },
-  { type: 'topic',   label: 'Topics'    },
-]
-
-// ── Default force values ──────────────────────────────────────────────────────
-const DEFAULT_FORCES = {
-  linkDistance:    80,
-  chargeStrength: -80,
-  linkStrength:    0.7,
-  centerStrength:  0.12,
-  clusterStrength: 0.10,
-  radialStrength:  0.05,
-  nodeScale:       1,
-}
-const forces = reactive({ ...DEFAULT_FORCES })
-function resetForces() { Object.assign(forces, DEFAULT_FORCES); applyForces(); applyNodeScale() }
-
+// ── D3 state ──────────────────────────────────────────────────────────────────
 let simulation  = null
 let nodeCircles = null
 let nodeLabels  = null
 let linkLines   = null
-let svgWidth    = 800
-let svgHeight   = 600
+let svgW = 800, svgH = 600
+let currentScale = 1  // zoom k
 
-const colors = { concept: '#4a9eff', entity: '#4ade80', topic: '#fb923c', unknown: '#888' }
+const NODE_COLORS = { concept: '#4a9eff', entity: '#4ade80', topic: '#fb923c', unknown: '#94a3b8' }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
   const data = await fetch('/api/graph').then(r => r.json())
-  nodes.value = data.nodes
-  links.value = data.links
+  allNodes.value = data.nodes
+  allLinks.value = data.links
   render(data.nodes, data.links)
 })
-
 onUnmounted(() => simulation?.stop())
 
-watch(search, val => {
+// ── Search filter ─────────────────────────────────────────────────────────────
+watch(search, updateSearch)
+function updateSearch() {
   if (!nodeCircles) return
-  const q = val.toLowerCase()
+  const q = search.value.toLowerCase()
   nodeCircles.attr('opacity', d => {
-    if (d.isOrphan) return !q || d.label.toLowerCase().includes(q) ? 0.45 : 0.08
-    return !q || d.label.toLowerCase().includes(q) ? 1 : 0.10
+    if (!display.showOrphans && d.isOrphan) return 0
+    if (!q) return d.isOrphan ? 0.5 : 1
+    return d.label.toLowerCase().includes(q) ? 1 : 0.06
   })
-  nodeLabels?.attr('opacity', d => !q || d.label.toLowerCase().includes(q) ? 1 : 0.08)
-})
+  updateLabelVisibility()
+}
 
-// ── Force controls ────────────────────────────────────────────────────────────
-function applyForces() {
-  if (!simulation) return
-  const maxLinks = Math.max(...simulation.nodes().map(d => d.linkCount || 0), 1)
-  simulation
-    .force('link', d3.forceLink(simulation.force('link').links())
-      .id(d => d.id)
-      .distance(forces.linkDistance)
-      .strength(forces.linkStrength))
-    .force('charge', d3.forceManyBody()
-      .strength(d => d.isOrphan ? 0 : forces.chargeStrength))
-    .force('center', d3.forceCenter(svgWidth / 2, svgHeight / 2)
-      .strength(forces.centerStrength))
-    .force('cluster-x', d3.forceX(d =>
-      svgWidth  * (TYPE_ANCHORS[d.type]?.ax ?? 0.5)
-    ).strength(d => d.isOrphan ? 0 : forces.clusterStrength))
-    .force('cluster-y', d3.forceY(d =>
-      svgHeight * (TYPE_ANCHORS[d.type]?.ay ?? 0.5)
-    ).strength(d => d.isOrphan ? 0 : forces.clusterStrength))
-    .force('radial', d3.forceRadial(
-      d => Math.max(20, 260 * (1 - (d.linkCount || 0) / maxLinks)),
-      svgWidth / 2, svgHeight / 2
-    ).strength(d => d.isOrphan ? 0 : forces.radialStrength))
-    .alpha(0.4).restart()
+// ── Orphan toggle ─────────────────────────────────────────────────────────────
+function toggleOrphans() {
+  display.showOrphans = !display.showOrphans
+  if (!nodeCircles) return
+  nodeCircles.attr('opacity', d => {
+    if (!display.showOrphans && d.isOrphan) return 0
+    return d.isOrphan ? 0.5 : 1
+  })
+  nodeLabels?.attr('display', d => {
+    if (!display.showOrphans && d.isOrphan) return 'none'
+    return null
+  })
+  updateLabelVisibility()
+}
+
+// ── Label visibility (text fade threshold × zoom) ─────────────────────────────
+function updateLabelVisibility() {
+  if (!nodeLabels) return
+  const q = search.value.toLowerCase()
+  nodeLabels.attr('display', d => {
+    if (!display.showOrphans && d.isOrphan) return 'none'
+    if (q && !d.label.toLowerCase().includes(q)) return 'none'
+    // Show label when (zoom * nodeRadius) > threshold
+    const effective = currentScale * nodeR(d)
+    return effective >= display.fadeThreshold ? null : 'none'
+  })
+}
+
+// ── Display appliers ──────────────────────────────────────────────────────────
+function nodeR(d) {
+  return (3 + Math.sqrt((d.linkCount || 0) + 1) * 2) * display.nodeScale
 }
 
 function applyNodeScale() {
   if (!nodeCircles) return
   nodeCircles.attr('r', d => nodeR(d))
-  nodeLabels?.attr('dx', d => nodeR(d) + 5)
+  nodeLabels?.attr('dx', d => nodeR(d) + 4)
+  updateLabelVisibility()
 }
 
-function nodeR(d) {
-  return (4 + Math.sqrt((d.linkCount || 0) + 1) * 2.5) * forces.nodeScale
+function applyLinkStyle() {
+  linkLines?.attr('stroke-width', display.linkThickness)
+}
+
+function animate() {
+  simulation?.alpha(0.5).restart()
+}
+
+// ── Force applier ─────────────────────────────────────────────────────────────
+function applyForces() {
+  if (!simulation) return
+  simulation
+    .force('link', d3.forceLink(simulation.force('link').links())
+      .id(d => d.id)
+      .distance(forces.linkDistance)
+      .strength(forces.linkStrength))
+    .force('charge', d3.forceManyBody().strength(forces.chargeStrength))
+    .force('center', d3.forceCenter(svgW / 2, svgH / 2).strength(forces.centerStrength))
+    .alpha(0.4).restart()
 }
 
 // ── Pin / unpin ───────────────────────────────────────────────────────────────
-function updateNodeStyles() {
+function refreshPinStyle() {
   if (!nodeCircles) return
   nodeCircles
-    .attr('stroke', d =>
-      d.pinned   ? 'var(--accent)' :
-      d.isOrphan ? 'transparent'   : 'var(--graph-stroke)')
-    .attr('stroke-width', d => d.pinned ? 2.5 : 1.5)
+    .attr('stroke', d => d.pinned ? 'var(--accent)' : 'none')
+    .attr('stroke-width', d => d.pinned ? 1.5 : 0)
 }
 
 function unpinNode(d) {
   if (d.isOrphan) return
   d.fx = null; d.fy = null; d.pinned = false
-  simulation?.alpha(0.2).restart()
-  updateNodeStyles()
-  if (selected.value === d) selected.value = { ...d }
-}
-
-function unpinAll() {
-  if (!simulation) return
-  simulation.nodes().forEach(d => {
-    if (d.pinned && !d.isOrphan) { d.fx = null; d.fy = null; d.pinned = false }
-  })
-  simulation.alpha(0.3).restart()
-  updateNodeStyles()
-  if (selected.value?.pinned) selected.value = { ...selected.value, pinned: false }
+  simulation?.alpha(0.15).restart()
+  refreshPinStyle()
+  if (selected.value?.id === d.id) selected.value = { ...d, pinned: false }
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
 function render(rawNodes, rawLinks) {
   const svg = d3.select(svgRef.value)
-  svgWidth  = svgRef.value.clientWidth  || 800
-  svgHeight = svgRef.value.clientHeight || 600
+  svgW = svgRef.value.clientWidth  || 800
+  svgH = svgRef.value.clientHeight || 600
 
   svg.selectAll('*').remove()
 
   const g = svg.append('g')
   svg.call(
-    d3.zoom().scaleExtent([0.05, 8]).on('zoom', e => g.attr('transform', e.transform))
+    d3.zoom().scaleExtent([0.03, 12]).on('zoom', e => {
+      g.attr('transform', e.transform)
+      currentScale = e.transform.k
+      updateLabelVisibility()
+    })
   )
 
   const nodeData = rawNodes.map(n => ({ ...n }))
   const linkData = rawLinks.map(l => ({ ...l }))
-  const maxLinks = Math.max(...nodeData.map(d => d.linkCount || 0), 1)
 
-  const orphans   = nodeData.filter(d => (d.linkCount || 0) === 0)
-  const connected = nodeData.filter(d => (d.linkCount || 0) > 0)
+  // Mark orphans
+  nodeData.forEach(d => { d.isOrphan = (d.linkCount || 0) === 0 })
 
-  // ── A: Pre-seed positions near type anchors ──────────────────────────────
-  connected.forEach(d => {
-    const anc = TYPE_ANCHORS[d.type] || TYPE_ANCHORS.unknown
-    d.x = svgWidth  * anc.ax + (Math.random() - 0.5) * 100
-    d.y = svgHeight * anc.ay + (Math.random() - 0.5) * 100
-  })
-
-  // ── D: Pin orphans to a tidy grid in the corner ──────────────────────────
-  const oCols = Math.max(3, Math.ceil(Math.sqrt(orphans.length * 1.8)))
-  orphans.forEach((d, i) => {
-    const col = i % oCols
-    const row = Math.floor(i / oCols)
-    d.x = svgWidth  * ORPHAN_ANCHOR.ax + (col - oCols / 2) * 22
-    d.y = svgHeight * ORPHAN_ANCHOR.ay + row * 22
-    d.fx = d.x; d.fy = d.y
-    d.isOrphan = true
-  })
-
-  // ── Zone watermark labels ────────────────────────────────────────────────
-  const bgLabels = g.append('g').attr('class', 'zone-labels')
-  ZONE_META.forEach(({ type, label }) => {
-    const anc = TYPE_ANCHORS[type]
-    bgLabels.append('text')
-      .attr('class', `zone-label zone-label-${type}`)
-      .attr('x', svgWidth  * anc.ax)
-      .attr('y', svgHeight * anc.ay - 52)
-      .attr('text-anchor', 'middle')
-      .text(label)
-  })
-
-  // ── Orphan zone indicator ────────────────────────────────────────────────
-  if (orphans.length > 0) {
-    const zW = oCols * 22 + 36
-    const zH = Math.ceil(orphans.length / oCols) * 22 + 36
-    g.append('rect')
-      .attr('class', 'orphan-zone')
-      .attr('x', svgWidth  * ORPHAN_ANCHOR.ax - zW / 2)
-      .attr('y', svgHeight * ORPHAN_ANCHOR.ay - 26)
-      .attr('width', zW).attr('height', zH)
-      .attr('rx', 8)
-    g.append('text')
-      .attr('class', 'orphan-zone-label')
-      .attr('x', svgWidth  * ORPHAN_ANCHOR.ax)
-      .attr('y', svgHeight * ORPHAN_ANCHOR.ay - 12)
-      .attr('text-anchor', 'middle')
-      .text(`未链接 (${orphans.length})`)
-  }
-
-  // ── Simulation ───────────────────────────────────────────────────────────
+  // ── Simulation: pure organic physics, no type anchors ──────────────────
   simulation = d3.forceSimulation(nodeData)
     .force('link', d3.forceLink(linkData).id(d => d.id)
-      .distance(forces.linkDistance).strength(forces.linkStrength))
+      .distance(forces.linkDistance)
+      .strength(forces.linkStrength))
     .force('charge', d3.forceManyBody()
-      .strength(d => d.isOrphan ? 0 : forces.chargeStrength))
-    .force('center', d3.forceCenter(svgWidth / 2, svgHeight / 2)
+      .strength(d => d.isOrphan ? -8 : forces.chargeStrength))
+    .force('center', d3.forceCenter(svgW / 2, svgH / 2)
       .strength(forces.centerStrength))
-    .force('collision', d3.forceCollide()
-      .radius(d => nodeR(d) + (d.isOrphan ? 1 : 5)))
-    // A: type clustering
-    .force('cluster-x', d3.forceX(d =>
-      svgWidth  * (TYPE_ANCHORS[d.type]?.ax ?? 0.5)
-    ).strength(d => d.isOrphan ? 0 : forces.clusterStrength))
-    .force('cluster-y', d3.forceY(d =>
-      svgHeight * (TYPE_ANCHORS[d.type]?.ay ?? 0.5)
-    ).strength(d => d.isOrphan ? 0 : forces.clusterStrength))
-    // B: hub-spoke radial (high linkCount → closer to center)
-    .force('radial', d3.forceRadial(
-      d => Math.max(20, 260 * (1 - (d.linkCount || 0) / maxLinks)),
-      svgWidth / 2, svgHeight / 2
-    ).strength(d => d.isOrphan ? 0 : forces.radialStrength))
+    .force('collision', d3.forceCollide().radius(d => nodeR(d) + 1.5))
 
-  // ── Links ────────────────────────────────────────────────────────────────
+  // ── Links ──────────────────────────────────────────────────────────────
   linkLines = g.append('g')
     .selectAll('line').data(linkData).join('line')
     .attr('class', 'graph-link')
+    .attr('stroke-width', display.linkThickness)
 
-  // ── Node circles ─────────────────────────────────────────────────────────
+  // ── Nodes ──────────────────────────────────────────────────────────────
   nodeCircles = g.append('g')
     .selectAll('circle').data(nodeData).join('circle')
     .attr('r', d => nodeR(d))
-    .attr('fill', d => colors[d.type] || colors.unknown)
-    .attr('opacity', d => d.isOrphan ? 0.40 : 1)
-    .attr('stroke', 'var(--graph-stroke)')
-    .attr('stroke-width', 1.5)
+    .attr('fill', d => NODE_COLORS[d.type] || NODE_COLORS.unknown)
+    .attr('opacity', d => d.isOrphan ? 0.5 : 1)
+    .attr('stroke', 'none')
     .attr('cursor', 'pointer')
     .on('click', (evt, d) => { evt.stopPropagation(); selected.value = d })
     .on('dblclick', (evt, d) => {
       evt.stopPropagation()
       if (!d.isOrphan) router.push(`/wiki/${encodeURIComponent(d.id)}`)
     })
-    // F: sticky drag — keep fx/fy on drag end
-    .call(
-      d3.drag()
-        .on('start', (e, d) => {
-          if (!e.active) simulation.alphaTarget(0.3).restart()
-          d.fx = d.x; d.fy = d.y
-        })
-        .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y })
-        .on('end',  (e, d) => {
-          if (!e.active) simulation.alphaTarget(0)
-          if (!d.isOrphan) {
-            d.pinned = true
-            updateNodeStyles()
-            if (selected.value?.id === d.id) selected.value = d
-          }
-        })
+    .call(d3.drag()
+      .on('start', (e, d) => {
+        if (!e.active) simulation.alphaTarget(0.3).restart()
+        d.fx = d.x; d.fy = d.y
+      })
+      .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y })
+      .on('end',   (e, d) => {
+        if (!e.active) simulation.alphaTarget(0)
+        if (!d.isOrphan) { d.pinned = true; refreshPinStyle() }
+      })
     )
 
-  // ── Labels ───────────────────────────────────────────────────────────────
+  // ── Labels ─────────────────────────────────────────────────────────────
   nodeLabels = g.append('g')
     .selectAll('text').data(nodeData).join('text')
     .text(d => d.label)
-    .attr('class', d => d.isOrphan ? 'graph-label graph-label-dim' : 'graph-label')
-    .attr('dx', d => nodeR(d) + 5)
-    .attr('dy', 4)
+    .attr('class', 'graph-label')
+    .attr('dx', d => nodeR(d) + 4)
+    .attr('dy', '0.35em')
+    .attr('display', 'none')  // start hidden; updateLabelVisibility reveals them
 
-  // ── Tick ─────────────────────────────────────────────────────────────────
+  // ── Tick ───────────────────────────────────────────────────────────────
   simulation.on('tick', () => {
     linkLines
       .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
       .attr('x2', d => d.target.x).attr('y2', d => d.target.y)
     nodeCircles.attr('cx', d => d.x).attr('cy', d => d.y)
-    nodeLabels.attr('x',  d => d.x).attr('y',  d => d.y)
+    nodeLabels.attr('x', d => d.x).attr('y', d => d.y)
   })
+
+  // First-pass label update after alpha settles a bit
+  setTimeout(updateLabelVisibility, 1200)
 }
 </script>
 
 <style scoped>
-.graph-wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.graph-wrap { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
 .graph-svg  { width: 100%; height: 100%; display: block; }
 
-/* Toolbar */
-.toolbar {
+/* Top bar */
+.topbar {
   position: absolute; top: 14px; left: 14px;
-  display: flex; align-items: center; gap: 10px; z-index: 10;
+  display: flex; align-items: center; gap: 14px; z-index: 10;
+  pointer-events: none;
 }
-.search { width: 180px; background: var(--surface); box-shadow: 0 1px 6px rgba(0,0,0,0.12); }
-.count  { color: var(--muted); font-size: 12px; }
-.legend { display: flex; gap: 6px; }
+.legend { display: flex; align-items: center; gap: 8px; }
+.leg-dot   { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.leg-label { font-size: 11px; color: var(--muted); }
+.node-count { font-size: 11px; color: var(--muted); }
 
-/* Info panel */
-.info-panel {
-  position: absolute; right: 16px; top: 14px;
+/* Node info card */
+.info-card {
+  position: absolute; top: 14px; right: 16px;
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; padding: 14px 16px; min-width: 180px;
-  display: flex; flex-direction: column; gap: 8px; z-index: 10;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  border-radius: 10px; padding: 14px 16px 12px; min-width: 170px;
+  display: flex; flex-direction: column; gap: 7px; z-index: 20;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
 }
-.info-title  { font-weight: 600; font-size: 14px; }
-.info-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.info-stat   { color: var(--muted); font-size: 12px; }
-.btn-sm      { padding: 5px 12px; font-size: 12px; border-radius: 6px; text-align: center; }
-.pin-tag {
-  font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
+.info-close {
+  position: absolute; top: 8px; right: 10px;
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 12px; padding: 2px 4px;
 }
-.btn-unpin {
-  font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--border); background: transparent; color: var(--muted);
+.info-close:hover { color: var(--text); }
+.info-title { font-weight: 600; font-size: 13px; padding-right: 16px; }
+.info-stat  { font-size: 11px; color: var(--muted); }
+.info-actions { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
+.info-link {
+  font-size: 12px; color: var(--accent); text-decoration: none;
+  transition: opacity 0.15s;
+}
+.info-link:hover { opacity: 0.75; }
+.info-unpin {
+  font-size: 11px; padding: 3px 8px; border-radius: 5px;
+  border: 1px solid var(--border); background: transparent;
+  cursor: pointer; color: var(--muted); text-align: left;
   transition: color 0.15s, border-color 0.15s;
 }
-.btn-unpin:hover { color: var(--accent); border-color: var(--accent); }
+.info-unpin:hover { color: var(--accent); border-color: var(--accent); }
 
-/* Forces panel */
-.forces-panel {
-  position: absolute; bottom: 16px; left: 16px; z-index: 10;
+/* Filter panel */
+.filter-panel {
+  position: absolute; bottom: 16px; left: 16px; z-index: 20;
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; overflow: hidden; min-width: 230px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  border-radius: 10px; overflow: hidden; width: 224px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
 }
-.forces-toggle {
+.panel-toggle {
   display: flex; align-items: center; gap: 7px;
-  width: 100%; padding: 9px 13px; background: none; border: none;
-  cursor: pointer; font-size: 12px; font-weight: 600;
-  color: var(--text); text-align: left; transition: background 0.15s;
+  width: 100%; padding: 9px 12px; background: none; border: none;
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text);
+  text-align: left; transition: background 0.15s;
 }
-.forces-toggle:hover { background: var(--surface2); }
-.forces-icon { font-size: 13px; }
-.chevron { margin-left: auto; color: var(--muted); }
+.panel-toggle:hover { background: var(--surface2); }
+.panel-toggle svg { color: var(--muted); flex-shrink: 0; }
+.panel-chevron { margin-left: auto; color: var(--muted); font-size: 10px; }
 
-.forces-body {
-  padding: 8px 13px 12px; border-top: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 8px;
-}
-.force-row {
-  display: grid; grid-template-columns: 68px 1fr 40px;
-  align-items: center; gap: 8px;
-}
-.force-row label { font-size: 11px; color: var(--muted); white-space: nowrap; }
-.force-row input[type=range] {
-  -webkit-appearance: none; height: 3px;
-  background: var(--border); border-radius: 2px; cursor: pointer; outline: none;
-}
-.force-row input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
-  background: var(--accent); cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-}
-.force-val { font-size: 10px; color: var(--accent); text-align: right; }
+.panel-body { border-top: 1px solid var(--border); }
 
-.forces-actions { display: flex; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
-.reset-btn {
-  font-size: 11px; color: var(--muted);
-  background: none; border: 1px solid var(--border); border-radius: 5px;
-  padding: 3px 8px; cursor: pointer; transition: color 0.15s, border-color 0.15s;
-}
-.reset-btn:hover { color: var(--accent); border-color: var(--accent); }
+.psection { border-bottom: 1px solid var(--border); }
+.psection:last-child { border-bottom: none; }
 
-/* D3 global elements */
+.psection-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; cursor: pointer; user-select: none;
+  transition: background 0.15s; font-size: 12px;
+}
+.psection-head:hover { background: var(--surface2); }
+.pchev { font-size: 9px; color: var(--muted); width: 10px; }
+.psection-head strong { font-size: 12px; font-weight: 600; flex: 1; }
+.icon-action {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 13px; padding: 1px 4px; border-radius: 3px;
+  transition: color 0.15s; margin-left: auto;
+}
+.icon-action:hover { color: var(--text); }
+
+.psection-body {
+  padding: 6px 12px 10px; display: flex; flex-direction: column; gap: 9px;
+}
+
+/* Search field */
+.search-field {
+  display: flex; align-items: center; gap: 7px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 9px;
+}
+.search-icon { color: var(--muted); flex-shrink: 0; }
+.search-input {
+  flex: 1; border: none; background: transparent; outline: none;
+  font-size: 12px; color: var(--text);
+}
+.search-input::placeholder { color: var(--muted); }
+
+/* Obsidian-style toggle */
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: var(--text);
+}
+.os-toggle {
+  width: 34px; height: 18px; border-radius: 9px; background: var(--border);
+  position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+}
+.os-toggle.on { background: var(--accent); }
+.os-toggle::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform 0.2s;
+}
+.os-toggle.on::after { transform: translateX(16px); }
+
+/* Sliders (Obsidian pill style) */
+.slider-row { display: flex; flex-direction: column; gap: 5px; }
+.slider-row label { font-size: 11px; color: var(--muted); }
+.slider-row input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 4px;
+  background: var(--border); border-radius: 2px; outline: none; cursor: pointer;
+}
+.slider-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px; height: 20px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15); cursor: pointer;
+}
+
+/* Animate button */
+.animate-btn {
+  width: 100%; padding: 8px; border-radius: 7px; border: none;
+  background: var(--accent); color: #fff; font-size: 12px;
+  font-weight: 600; cursor: pointer; transition: opacity 0.15s; margin-top: 2px;
+}
+.animate-btn:hover { opacity: 0.85; }
+
+/* Transitions */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.15s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* D3 SVG globals */
 :global(.graph-link) {
-  stroke: var(--border); stroke-opacity: 0.65; stroke-width: 1px;
+  stroke: var(--graph-link);
+  stroke-opacity: 1;
 }
 :global(.graph-label) {
-  fill: var(--muted); font-size: 10px;
+  fill: var(--text); font-size: 10px;
   pointer-events: none; user-select: none;
-}
-:global(.graph-label-dim) {
-  fill: var(--muted); font-size: 9px; opacity: 0.55;
-  pointer-events: none; user-select: none;
-}
-
-/* Zone watermark labels */
-:global(.zone-label) {
-  font-size: 15px; font-weight: 700; letter-spacing: 1px;
-  text-transform: uppercase; pointer-events: none; user-select: none;
-  opacity: 0.07;
-}
-:global(.zone-label-concept) { fill: #4a9eff; }
-:global(.zone-label-entity)  { fill: #4ade80; }
-:global(.zone-label-topic)   { fill: #fb923c; }
-
-/* Orphan zone */
-:global(.orphan-zone) {
-  fill: var(--surface2); stroke: var(--border);
-  stroke-width: 1px; stroke-dasharray: 4 3; opacity: 0.6;
-}
-:global(.orphan-zone-label) {
-  font-size: 9px; font-weight: 600; letter-spacing: 0.5px;
-  fill: var(--muted); opacity: 0.6; pointer-events: none; user-select: none;
-  text-transform: uppercase;
 }
 </style>
