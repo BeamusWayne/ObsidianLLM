@@ -151,21 +151,21 @@ const visibleLinkCount = computed(() => allLinks.value.length)
 // ── Display settings ──────────────────────────────────────────────────────────
 const display = reactive({
   showOrphans:   true,
-  fadeThreshold: 4,
+  fadeThreshold: 3.5,
   nodeScale:     1,
-  linkThickness: 0.8,
+  linkThickness: 0.45,
 })
 
 // ── Force settings ────────────────────────────────────────────────────────────
 const forces = reactive({
-  centerStrength: 0.28,
-  chargeStrength: -45,
-  linkStrength:   0.5,
-  linkDistance:   55,
+  centerStrength: 0.38,
+  chargeStrength: -18,
+  linkStrength:   0.9,
+  linkDistance:   28,
 })
 
-const DEFAULT_DISPLAY = { showOrphans: true, fadeThreshold: 4, nodeScale: 1, linkThickness: 0.8 }
-const DEFAULT_FORCES  = { centerStrength: 0.28, chargeStrength: -45, linkStrength: 0.5, linkDistance: 55 }
+const DEFAULT_DISPLAY = { showOrphans: true, fadeThreshold: 3.5, nodeScale: 1, linkThickness: 0.45 }
+const DEFAULT_FORCES  = { centerStrength: 0.38, chargeStrength: -18, linkStrength: 0.9, linkDistance: 28 }
 
 function resetAll() {
   Object.assign(display, DEFAULT_DISPLAY)
@@ -236,7 +236,8 @@ function updateLabelVisibility() {
 
 // ── Display appliers ──────────────────────────────────────────────────────────
 function nodeR(d) {
-  return (3 + Math.sqrt((d.linkCount || 0) + 1) * 2) * display.nodeScale
+  // Dramatic size range: 2px (leaf) → ~14px (major hub), like Obsidian
+  return (2 + Math.pow((d.linkCount || 0) + 1, 0.55) * 1.8) * display.nodeScale
 }
 
 function applyNodeScale() {
@@ -262,7 +263,7 @@ function applyForces() {
       .id(d => d.id)
       .distance(forces.linkDistance)
       .strength(forces.linkStrength))
-    .force('charge', d3.forceManyBody().strength(forces.chargeStrength))
+    .force('charge', d3.forceManyBody().strength(d => d.isOrphan ? -5 : forces.chargeStrength).distanceMax(180))
     .force('center', d3.forceCenter(svgW / 2, svgH / 2).strength(forces.centerStrength))
     .alpha(0.4).restart()
 }
@@ -306,16 +307,30 @@ function render(rawNodes, rawLinks) {
   // Mark orphans
   nodeData.forEach(d => { d.isOrphan = (d.linkCount || 0) === 0 })
 
-  // ── Simulation: pure organic physics, no type anchors ──────────────────
+  // Pre-place nodes on a circle — avoids the random "big bang" explosion,
+  // simulation starts near equilibrium and converges to a compact blob
+  const initR = Math.min(svgW, svgH) * 0.28
+  nodeData.forEach((d, i) => {
+    const angle = (i / nodeData.length) * 2 * Math.PI
+    d.x = svgW / 2 + initR * Math.cos(angle)
+    d.y = svgH / 2 + initR * Math.sin(angle)
+  })
+
+  // ── Simulation ─────────────────────────────────────────────────────────
+  // alphaDecay 0.011 = simulation runs ~2× longer before cooling down
+  // velocityDecay 0.35 = heavier damping → less oscillation → tighter cluster
   simulation = d3.forceSimulation(nodeData)
+    .alphaDecay(0.011)
+    .velocityDecay(0.35)
     .force('link', d3.forceLink(linkData).id(d => d.id)
       .distance(forces.linkDistance)
       .strength(forces.linkStrength))
     .force('charge', d3.forceManyBody()
-      .strength(d => d.isOrphan ? -8 : forces.chargeStrength))
+      .strength(d => d.isOrphan ? -5 : forces.chargeStrength)
+      .distanceMax(180))        // repulsion only within 180px — far nodes unaffected
     .force('center', d3.forceCenter(svgW / 2, svgH / 2)
       .strength(forces.centerStrength))
-    .force('collision', d3.forceCollide().radius(d => nodeR(d) + 1.5))
+    .force('collision', d3.forceCollide().radius(d => nodeR(d) + 0.5))
 
   // ── Links ──────────────────────────────────────────────────────────────
   linkLines = g.append('g')
