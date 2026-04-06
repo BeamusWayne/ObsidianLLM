@@ -1,21 +1,28 @@
-/* ── Light theme (default) ───────────────────────────────────────────────── */
+/* ── Sky blue light theme (default) ───────────────────────────────────────── */
 :root {
-  --bg:       #f5f6f8;
+  --bg:       #f0f6fb;
   --surface:  #ffffff;
-  --surface2: #f0f2f5;
-  --border:   #e5e7eb;
-  --text:     #111827;
-  --muted:    #6b7280;
-  --accent:   #2563eb;
-  --concept:  #2563eb;
-  --entity:   #16a34a;
-  --topic:    #ea580c;
+  --surface2: #e3eef7;
+  --border:   #c4d8e8;
+  --text:     #0c1f2e;
+  --muted:    #5b7d93;
+  --accent:   #1480b8;
+  --accent-light: #ddf0fb;
+
+  /* knowledge types (both systems) */
+  --concept:       #2563eb;
+  --entity:        #16a34a;
+  --topic:         #ea580c;
+  --source-youtube:     #e53e3e;
+  --source-twitter:     #1a91da;
+  --source-xiaohongshu: #ff2442;
+  --source-article:     #6b7280;
+
   --danger:   #dc2626;
   --sidebar-w: 200px;
 
   /* semantic */
-  --active-bg:       #eff6ff;
-  --active-border:   #93c5fd;
+  --active-bg:       color-mix(in srgb, var(--accent) 10%, transparent);
   --result-ok-bg:    #f0fdf4;
   --result-ok-text:  #15803d;
   --result-err-bg:   #fef2f2;
@@ -24,116 +31,71 @@
   /* graph */
   --graph-link:   rgba(0,0,0,0.10);
   --graph-label:  #374151;
-  --graph-stroke: #f5f6f8;
+  --graph-stroke: #f0f6fb;
 
-  /* tag pill backgrounds */
-  --tag-concept-bg: #eff6ff;
-  --tag-concept-fg: #1d4ed8;
-  --tag-entity-bg:  #f0fdf4;
-  --tag-entity-fg:  #15803d;
-  --tag-topic-bg:   #fff7ed;
-  --tag-topic-fg:   #c2410c;
-  --tag-unknown-bg: #f3f4f6;
-  --tag-unknown-fg: #6b7280;
+  /* tags */
+  --tag-concept-bg: #eff6ff; --tag-concept-fg: #1d4ed8;
+  --tag-entity-bg:  #f0fdf4; --tag-entity-fg:  #15803d;
+  --tag-topic-bg:   #fff7ed; --tag-topic-fg:   #c2410c;
+  --tag-unknown-bg: #f3f4f6; --tag-unknown-fg: #6b7280;
 }
 
 /* ── Dark theme ──────────────────────────────────────────────────────────── */
 :root[data-theme="dark"] {
-  --bg:       #0f0f0f;
-  --surface:  #1a1a1a;
-  --surface2: #222222;
-  --border:   #2a2a2a;
-  --text:     #e0e0e0;
-  --muted:    #777777;
-  --accent:   #4a9eff;
-  --concept:  #4a9eff;
-  --entity:   #4ade80;
-  --topic:    #fb923c;
-  --danger:   #f87171;
+  --bg:       #080f18;
+  --surface:  #0d1b2a;
+  --surface2: #132434;
+  --border:   #1b3048;
+  --text:     #d8eaf5;
+  --muted:    #5e8099;
+  --accent:   #2eaae0;
+  --accent-light: #091825;
 
-  --active-bg:       #1a2a3a;
-  --active-border:   #3b82f6;
-  --result-ok-bg:    #1a3020;
-  --result-ok-text:  #4ade80;
-  --result-err-bg:   #3a1010;
-  --result-err-text: #f87171;
+  --active-bg: #0b2035;
+  --result-ok-bg: #0a2818; --result-ok-text: #4ade80;
+  --result-err-bg: #2a0e0e; --result-err-text: #f87171;
 
-  --graph-link:   rgba(255,255,255,0.15);
-  --graph-label:  #9ca3af;
-  --graph-stroke: #0f0f0f;
+  --graph-link:  rgba(255,255,255,0.12);
+  --graph-label: #8ab0c8;
+  --graph-stroke:#080f18;
 
-  --tag-concept-bg: #1a2a40;
-  --tag-concept-fg: #4a9eff;
-  --tag-entity-bg:  #1a3020;
-  --tag-entity-fg:  #4ade80;
-  --tag-topic-bg:   #3d2010;
-  --tag-topic-fg:   #fb923c;
-  --tag-unknown-bg: #222222;
-  --tag-unknown-fg: #777777;
+  --tag-concept-bg: #0e2040; --tag-concept-fg: #5aadff;
+  --tag-entity-bg:  #0a2818; --tag-entity-fg:  #4ade80;
+  --tag-topic-bg:   #2a1408; --tag-topic-fg:   #fb923c;
+  --tag-unknown-bg: #132434; --tag-unknown-fg: #5e8099;
 }
 
-/* ── System theme (follows OS preference) ───────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
-    --bg:       #0f0f0f;
-    --surface:  #1a1a1a;
-    --surface2: #222222;
-    --border:   #2a2a2a;
-    --text:     #e0e0e0;
-    --muted:    #777777;
-    --accent:   #4a9eff;
-    --concept:  #4a9eff;
-    --entity:   #4ade80;
-    --topic:    #fb923c;
-    --danger:   #f87171;
-
-    --active-bg:       #1a2a3a;
-    --active-border:   #3b82f6;
-    --result-ok-bg:    #1a3020;
-    --result-ok-text:  #4ade80;
-    --result-err-bg:   #3a1010;
-    --result-err-text: #f87171;
-
-    --graph-link:   rgba(255,255,255,0.15);
-    --graph-label:  #9ca3af;
-    --graph-stroke: #0f0f0f;
-
-    --tag-concept-bg: #1a2a40;
-    --tag-concept-fg: #4a9eff;
-    --tag-entity-bg:  #1a3020;
-    --tag-entity-fg:  #4ade80;
-    --tag-topic-bg:   #3d2010;
-    --tag-topic-fg:   #fb923c;
-    --tag-unknown-bg: #222222;
-    --tag-unknown-fg: #777777;
+    --bg:       #080f18; --surface:  #0d1b2a; --surface2: #132434;
+    --border:   #1b3048; --text:     #d8eaf5; --muted:    #5e8099;
+    --accent:   #2eaae0; --accent-light: #091825;
+    --active-bg: #0b2035;
   }
 }
 
 /* ── Base ────────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
-
-/* Responsive base: ~12px on small screens, ~15px on large screens */
 html { font-size: clamp(12px, 0.6vw + 9.5px, 15px); }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 0.933rem; /* ~14px at 15px base */
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
+  font-size: 0.933rem;
   height: 100vh;
   overflow: hidden;
   transition: background 0.2s, color 0.2s;
 }
 
 #app { display: flex; height: 100vh; }
-
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 button {
   cursor: pointer;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 6px 14px;
   font-size: 13px;
   font-family: inherit;
@@ -145,25 +107,28 @@ button {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+  border-radius: 8px;
 }
-.btn-primary:hover  { filter: brightness(1.1); }
+.btn-primary:hover  { filter: brightness(1.08); }
 .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-ghost { background: transparent; color: var(--text); }
 .btn-ghost:hover { background: var(--surface2); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
 
-input, textarea {
-  background: var(--surface2);
+input, textarea, select {
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text);
   font-family: inherit;
   font-size: 13px;
-  padding: 7px 10px;
+  padding: 8px 12px;
   width: 100%;
   outline: none;
   transition: border-color 0.15s, background 0.2s;
 }
-input:focus, textarea:focus { border-color: var(--accent); }
+input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--muted); }
 
 /* ── Tags ────────────────────────────────────────────────────────────────── */
 .tag {
@@ -179,11 +144,67 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .tag-topic   { background: var(--tag-topic-bg);   color: var(--tag-topic-fg); }
 .tag-unknown { background: var(--tag-unknown-bg); color: var(--tag-unknown-fg); }
 
-/* ── Graph SVG theme-aware styles ───────────────────────────────────────── */
+/* ── Source type badges ──────────────────────────────────────────────────── */
+.src-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px; border-radius: 10px; font-size: 10px; font-weight: 600;
+}
+.src-youtube     { background: #fff0f0; color: var(--source-youtube); }
+.src-twitter     { background: #f0f8ff; color: var(--source-twitter); }
+.src-xiaohongshu { background: #fff0f3; color: var(--source-xiaohongshu); }
+.src-article     { background: var(--surface2); color: var(--muted); }
+
+/* ── Page layout ─────────────────────────────────────────────────────────── */
+.page-wrap { height: 100%; overflow-y: auto; padding: 28px 32px; }
+.page-header { margin-bottom: 24px; }
+.page-title { font-size: 20px; font-weight: 700; color: var(--text); }
+.page-subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  transition: background 0.2s, border-color 0.2s;
+}
+.card-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
+
+/* ── Graph SVG ───────────────────────────────────────────────────────────── */
 .graph-link  { stroke: var(--graph-link); }
 .graph-label { fill: var(--graph-label); font-size: 11px; pointer-events: none; font-family: inherit; }
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+.spinner {
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Resize handle ───────────────────────────────────────────────────────── */
+.resize-handle {
+  width: 4px; flex-shrink: 0; cursor: col-resize;
+  background: var(--border); transition: background 0.15s; z-index: 20;
+}
+.resize-handle:hover, .resize-handle.active { background: var(--accent); opacity: 0.5; }
+
+/* ── Wiki content (markdown render) ─────────────────────────────────────── */
+.wiki-content h1 { font-size: clamp(17px,1.5vw+9px,22px); font-weight: 700; margin-bottom: 16px; }
+.wiki-content h2 { font-size: clamp(14px,1.1vw+8px,17px); font-weight: 600; margin: 22px 0 10px; }
+.wiki-content h3 { font-size: clamp(13px,0.9vw+8px,15px); font-weight: 600; margin: 16px 0 8px; color: var(--muted); }
+.wiki-content p  { line-height: 1.75; margin-bottom: 12px; color: var(--text); font-size: 14px; }
+.wiki-content ul,.wiki-content ol { padding-left: 20px; margin-bottom: 12px; }
+.wiki-content li { line-height: 1.7; color: var(--text); margin-bottom: 3px; font-size: 14px; }
+.wiki-content code { background: var(--surface2); border-radius: 4px; padding: 1px 5px; font-size: 0.85em; font-family: 'SF Mono','Fira Code',monospace; }
+.wiki-content pre { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow-x: auto; margin-bottom: 14px; }
+.wiki-content pre code { background: none; padding: 0; }
+.wiki-content a { color: var(--accent); }
+.wiki-content strong { font-weight: 600; }
+.wiki-content hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+.wiki-content blockquote { border-left: 3px solid var(--accent); padding-left: 14px; color: var(--muted); margin-bottom: 12px; }

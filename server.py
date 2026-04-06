@@ -114,15 +114,17 @@ async def get_graph():
 @app.get("/api/wiki")
 async def list_wiki():
     pages = []
-    for p in sorted(WIKI.rglob("*.md")):
+    for p in sorted(WIKI.rglob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True):
         content = p.read_text(encoding="utf-8")
         title_m = re.search(r"^# (.+)$", content, re.MULTILINE)
         type_m = re.search(r"\*\*Type:\*\*\s*(\w+)", content)
         pages.append({
-            "path": str(p.relative_to(ROOT)),
-            "stem": p.stem,
-            "title": title_m.group(1) if title_m else p.stem,
-            "type": type_m.group(1) if type_m else "unknown",
+            "path":        str(p.relative_to(ROOT)),
+            "stem":        p.stem,
+            "title":       title_m.group(1) if title_m else p.stem,
+            "type":        type_m.group(1) if type_m else "unknown",
+            "source_type": _detect_source_type(content),
+            "mtime":       p.stat().st_mtime,
         })
     return pages
 
@@ -400,6 +402,201 @@ async def pull_model(data: dict):
 
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ── Source type detection ──────────────────────────────────────────────────────
+
+def _detect_source_type(content: str) -> str:
+    import re as _re
+    m = _re.search(r"\*\*SourceType:\*\*\s*(\w+)", content, _re.IGNORECASE)
+    if m:
+        return m.group(1).lower()
+    for url in _re.findall(r"https?://[^\s\)\"\'\]]+", content):
+        u = url.lower()
+        if "youtube.com" in u or "youtu.be" in u:
+            return "youtube"
+        if "twitter.com" in u or "x.com" in u:
+            return "twitter"
+        if "xiaohongshu.com" in u or "xhslink.com" in u:
+            return "xiaohongshu"
+    return "article"
+
+
+# ── Chat (Ori) ────────────────────────────────────────────────────────────────
+
+class ChatMsg(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMsg]
+    context: str = "free"  # "free" | "wiki"
+
+@app.post("/api/chat")
+async def chat_ori(req: ChatRequest):
+    def run_sync():
+        from llm import chat
+        from query import load_wiki
+
+        msgs = [{"role": m.role, "content": m.content} for m in req.messages]
+        if req.context == "wiki":
+            wiki_ctx = load_wiki()
+            system = (
+                "你是 Echo，用户的 AI 知识伙伴。基于以下知识库内容回答问题，"
+                "用 [[页面名]] 格式引用相关页面。用提问的语言回答。\n\n"
+                f"知识库：\n{wiki_ctx}"
+            )
+        else:
+            system = (
+                "你是 Echo，用户的 AI 知识伙伴。帮助用户整理、分析、串联他们收藏的知识。"
+                "友好、聪明、有洞察力。用提问的语言回答。"
+            )
+        reply = chat([{"role": "system", "content": system}] + msgs)
+        reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
+        return reply
+
+    reply = await asyncio.to_thread(run_sync)
+    return {"reply": reply}
+
+
+# ── Ideas ─────────────────────────────────────────────────────────────────────
+
+class IdeaCreate(BaseModel):
+    content: str
+
+class IdeaUpdate(BaseModel):
+    model_config = {"extra": "allow"}
+
+@app.get("/api/ideas")
+async def list_ideas_api():
+    from ideas import list_ideas
+    return list_ideas()
+
+@app.post("/api/ideas")
+async def create_idea_api(req: IdeaCreate):
+    from ideas import create_idea
+    return create_idea(req.content)
+
+@app.patch("/api/ideas/{idea_id}")
+async def update_idea_api(idea_id: str, data: dict):
+    from ideas import update_idea
+    result = update_idea(idea_id, data)
+    if result is None:
+        raise HTTPException(404, "Idea not found")
+    return result
+
+@app.delete("/api/ideas/{idea_id}")
+async def delete_idea_api(idea_id: str):
+    from ideas import delete_idea
+    if not delete_idea(idea_id):
+        raise HTTPException(404, "Idea not found")
+    return {"ok": True}
+
+@app.post("/api/ideas/{idea_id}/expand")
+async def expand_idea_api(idea_id: str):
+    from ideas import list_ideas, update_idea
+
+    ideas = list_ideas()
+    idea = next((i for i in ideas if i["id"] == idea_id), None)
+    if not idea:
+        raise HTTPException(404, "Idea not found")
+
+    def run_sync():
+        from llm import chat
+        system = (
+            "你是 Echo，用户的知识伙伴。用户有一个想法，请你帮助展开："
+            "分析它的潜在含义、关联概念、可以深入探索的方向，以及可能的应用场景。"
+            "简洁但有深度，用中文回答。"
+        )
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"我的想法：{idea['content']}"},
+        ]
+        reply = chat(messages)
+        reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
+        return reply
+
+    expanded = await asyncio.to_thread(run_sync)
+    return update_idea(idea_id, {"ai_expanded": expanded})
+
+
+# ── Collections ───────────────────────────────────────────────────────────────
+
+class CollectionCreate(BaseModel):
+    name: str
+
+class CollectionItemAdd(BaseModel):
+    stem: str
+
+@app.get("/api/collections")
+async def list_collections_api():
+    from collections_store import list_collections
+    return list_collections()
+
+@app.post("/api/collections")
+async def create_collection_api(req: CollectionCreate):
+    from collections_store import create_collection
+    return create_collection(req.name)
+
+@app.patch("/api/collections/{col_id}")
+async def update_collection_api(col_id: str, data: dict):
+    from collections_store import update_collection
+    result = update_collection(col_id, data)
+    if result is None:
+        raise HTTPException(404, "Collection not found")
+    return result
+
+@app.delete("/api/collections/{col_id}")
+async def delete_collection_api(col_id: str):
+    from collections_store import delete_collection
+    if not delete_collection(col_id):
+        raise HTTPException(404, "Collection not found")
+    return {"ok": True}
+
+@app.post("/api/collections/{col_id}/items")
+async def add_collection_item(col_id: str, req: CollectionItemAdd):
+    from collections_store import add_item
+    result = add_item(col_id, req.stem)
+    if result is None:
+        raise HTTPException(404, "Collection not found")
+    return result
+
+@app.delete("/api/collections/{col_id}/items/{stem}")
+async def remove_collection_item(col_id: str, stem: str):
+    from collections_store import remove_item
+    result = remove_item(col_id, stem)
+    if result is None:
+        raise HTTPException(404, "Collection not found")
+    return result
+
+
+# ── Stats ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/stats")
+async def get_stats():
+    from stats import compute_stats
+    return await asyncio.to_thread(compute_stats)
+
+
+# ── Review ────────────────────────────────────────────────────────────────────
+
+class TopicRequest(BaseModel):
+    topic: str
+
+@app.get("/api/review")
+async def list_reviews_api():
+    from review_gen import list_reviews
+    return list_reviews()
+
+@app.post("/api/review/weekly")
+async def generate_weekly_api():
+    from review_gen import generate_weekly_review
+    return await asyncio.to_thread(generate_weekly_review)
+
+@app.post("/api/review/topic")
+async def generate_topic_api(req: TopicRequest):
+    from review_gen import generate_topic_review
+    return await asyncio.to_thread(generate_topic_review, req.topic)
 
 
 # ── Serve raw files (for image thumbnails) ────────────────────────────────────

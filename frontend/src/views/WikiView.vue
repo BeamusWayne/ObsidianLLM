@@ -4,6 +4,7 @@
     <div v-else-if="error" class="center-msg error">{{ error }}</div>
     <div v-else class="wiki-layout">
       <article class="wiki-body">
+        <router-link to="/knowledge" class="back-btn">← 返回知识库</router-link>
         <div class="wiki-content" v-html="rendered"></div>
       </article>
 
@@ -87,6 +88,12 @@ watch(() => route.params.path, p => p && load(p))
   padding: clamp(20px, 3vw, 40px) clamp(20px, 4vw, 48px);
   min-width: 0;
 }
+.back-btn {
+  display: inline-flex; align-items: center;
+  font-size: 12px; color: var(--muted); text-decoration: none;
+  margin-bottom: 20px; transition: color 0.15s;
+}
+.back-btn:hover { color: var(--accent); text-decoration: none; }
 
 .resize-handle {
   width: 4px;
